@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<style id="appcss" data-href="/auth/static/campus.css?v=7662b7f658">
+<style id="appcss" data-href="/auth/static/campus.css?v=d57dc7bd93">
 /* 智慧校園系統共用樣式：手機優先（老師用手機），桌機只是加寬（行政用電腦）。各艙看起來是同一套系統。
    外殼頁只抓頁面的第一個樣式表，所以各艙自己的樣式也寫在這裡。
 
@@ -506,6 +506,23 @@ textarea.doctext{font-size:15.5px;line-height:1.6}
   .card{border-color:#ccc}
 }
 
+/* ── 教保：教案資料庫（2026-11-17，/lesson） ─────────── */
+.lsweek{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px}
+.lsweek .btn{flex:none}
+.lsweek b{font-size:18px;text-align:center;flex:1}
+.lstext{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16.5px;line-height:1.7}
+.lssec{margin:14px 0 0}
+.lssec:first-child{margin-top:0}
+.lssec > b{display:block;font-size:14.5px;color:var(--muted);font-weight:600;margin-bottom:2px}
+.lsphotos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px}
+.lsphotos img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--track);display:block}
+.lsphotos label{margin:0;display:block;font-weight:400;font-size:14px;color:var(--risk-ink);text-align:center}
+.lshead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.lshead h2{margin:0}
+.lsplanform textarea{min-height:120px;overflow:hidden}
+.lschips{margin-top:6px}
+.lschips .chip{font-size:14.5px;min-height:32px;background:var(--card);cursor:pointer;text-align:left}
+
 /* ── 園務：巡園（2026-10-27 從測試版請假系統搬過來，/patrol） ─────────── */
 .seg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .seg.three{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -607,6 +624,15 @@ textarea.doctext{font-size:15.5px;line-height:1.6}
 .shmarks{display:flex;align-items:center;gap:6px}
 .shmarks form{margin:0}
 .shamt{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px;text-align:right}
+.shpay{background:var(--brand-t);border-radius:var(--r-md,12px);padding:12px 14px;margin-bottom:14px}
+.shpay table.grid td{border-bottom-color:transparent;padding:4px 0}
+.shpay .hint{margin:6px 0 0}
+.shpayhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.shpayhead span{font-weight:600}
+.shpayhead b{font-size:24px;font-variant-numeric:tabular-nums;color:var(--brand)}
+.shsub{font-size:16px;margin:4px 0 0}
+.shtotal{text-align:right;margin:10px 0 0;font-size:16px}
+.shtotal b{font-size:20px;font-variant-numeric:tabular-nums}
 .shcomment{padding:8px 0 10px;border-bottom:1px solid var(--line)}
 .shcomment .shtext{margin-top:4px;font-size:15.5px}
 .linkbtn{background:none;border:0;padding:0;color:var(--muted);font-size:13.5px;cursor:pointer;text-decoration:underline}
@@ -1472,7 +1498,7 @@ function showFatal(t) {
 }
 </script>
 </head>
-<body data-pubkey="BHIEj4jzc4P9xFZuoMW5kW9POYjIIACnzUgYGQUjwUzTs158fwwL6CHaelw8EYsYbZ3YEMXzFJ6+XlTLhT13DiE=" data-exec="https://bk-gw-relay.bklkidsgarden.workers.dev/" data-home="/auth/teacher" data-login="/auth/login?next=%2Fauth%2Fteacher" data-session="campus_session" data-entry="teacher">
+<body data-pubkey="BHIEj4jzc4P9xFZuoMW5kW9POYjIIACnzUgYGQUjwUzTs158fwwL6CHaelw8EYsYbZ3YEMXzFJ6+XlTLhT13DiE=" data-exec="https://bk-gw-relay.bklkidsgarden.workers.dev/" data-home="/auth/teacher" data-login="/auth/login?next=%2Fauth%2Fteacher" data-session="campus_session" data-entry="teacher" data-offline="1" data-other-handle="campus-test-acct-">
 <pre id="fatal" hidden></pre>
 <div id="busy" hidden>連線中…</div>
 <div id="sheet" hidden></div>
@@ -1597,8 +1623,8 @@ const Gw = (() => {
     return e;
   }
 
-  /** 送一筆請求到主機。req = {method, path, headers}；body 為 Uint8Array（可省略）。 */
-  async function call(req, body) {
+  /** 把一筆請求加密成信封（只有主機解得開）。斷線代收的打卡也用這個：信封交給轉送服務保管，主機恢復後才解。 */
+  async function seal(req, body) {
     const s = await session();
     const id = hex(crypto.getRandomValues(new Uint8Array(16)));
     const meta = { id, ts: Date.now(), method: req.method || 'GET', path: req.path,
@@ -1607,7 +1633,12 @@ const Gw = (() => {
     const ct = new Uint8Array(await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv, additionalData: te.encode('bk-gw-req-v1') },
       s.key, frame(meta, body || new Uint8Array(0))));
-    const env = JSON.stringify({ v: 1, epk: s.epk, iv: b64.enc(iv), ct: b64.enc(ct) });
+    return { id, s, meta, env: JSON.stringify({ v: 1, epk: s.epk, iv: b64.enc(iv), ct: b64.enc(ct) }) };
+  }
+
+  /** 送一筆請求到主機。req = {method, path, headers}；body 為 Uint8Array（可省略）。 */
+  async function call(req, body) {
+    const { id, s, meta, env } = await seal(req, body);
 
     // 安全重送：Google 把結果交回來那一段偶爾會掉（空白、404、逾時），但請求可能已經到過主機了。
     // 拿「同一份」加密請求再送：主機認得同一個請求編號，會直接交出上次的結果、不會再執行一次，
@@ -1637,7 +1668,11 @@ const Gw = (() => {
       throw friendly(e.kind || 'apps-script', e.message + (e.kind === 'slow' ? '，請再試一次' : ''));
     }
     if (relayed.status === 429) throw friendly('busy', '系統忙碌中，請過一分鐘再試');
-    if (relayed.status === 0) throw friendly('offline', '主機目前連不上（可能正在重新啟動），請稍後再試');
+    // 0＝轉送服務連不到主機；5xx 是 Cloudflare 代回的（例如 530：主機的通道斷了，2026-11-20 早上斷網就是這樣）。
+    // 閘道自己只會回 4xx，所以這兩種都是「主機連不上」，外殼頁才會給「離線打卡」
+    if (relayed.status === 0 || relayed.status >= 500) {
+      throw friendly('offline', '主機目前連不上（可能正在重新啟動或斷網），請稍後再試');
+    }
     if (relayed.status === 413) throw friendly('too-large', '檔案太大，送不出去');
     if (relayed.status !== 200) throw friendly('gateway', '主機拒絕了這次請求（' + relayed.status + '），請重新整理頁面再試');
     const res = JSON.parse(relayed.body);
@@ -1649,7 +1684,7 @@ const Gw = (() => {
     return { status: rm.status, headers: rm.headers || {}, body: rb };
   }
 
-  return { call, run };
+  return { call, run, seal };
 })();
 
 </script>
@@ -1994,6 +2029,275 @@ const PageCache = (() => {
   };
 })();
 
+/** 離線打卡（2026-11-21；11/20 早上主機斷網三個多小時，26 位同仁沒有上班卡）。
+ *
+ * 主機連不上、手機還有網路時：向轉送服務拿一張蓋了時間章的號碼牌，用 SHA-256(號碼牌) 當 Face ID 的題目，
+ * 定位與 Face ID 的結果用主機的公鑰加密（Gw.seal，跟一般請求同一套）交給轉送服務保管；主機恢復後自己去領、驗、匯入
+ *（gateway/offline.py → 請假系統 punch.record_relay）。打卡時間＝轉送服務收到的時間，不用手機的時鐘。
+ *
+ * 手機上不存打卡資料：號碼牌、定位、Face ID 的結果只在這一頁的記憶體裡，交出去就沒了（PWA施作規劃書 §3）。
+ * 只記園區的位置（打卡頁開過就記住；學校的地址不是個資），斷線時才算得出在不在範圍內；沒記到就讓他自己決定要不要填原因。
+ * 只有同仁的 App（主管及行政、老師）有：build.py 在 body 上標 data-offline="1"。 */
+const OfflinePunch = (() => {
+  const app = document.getElementById('app');
+  const ON = document.body.dataset.offline === '1';
+  // 另一個環境的 Face ID 帳號代號開頭（測試與正式同一個網址，手機會把兩把都列出來）：選到那一把就當場說，不必等主機退回
+  const OTHER = document.body.dataset.otherHandle || '';
+  const ENTRY = document.body.dataset.entry || '';
+  const SITE_KEY = 'gw.punchsite:' + location.pathname.replace(/[^/]*$/, '');
+  const TICKET_REFRESH_MS = 8 * 60 * 1000;   // 號碼牌 10 分鐘內要交回：開著超過 8 分鐘就先換一張
+  const DEFAULT_MAX_AGE = 180;               // 定位幾秒內要按下打卡（同打卡頁）
+  const te = new TextEncoder();
+
+  function available() { return ON && !!(window.PublicKeyCredential && navigator.credentials && crypto.subtle); }
+
+  /** 打卡頁（#pk-form）開過就記住園區位置。Shell.render 每次換頁後呼叫。 */
+  function remember(root) {
+    const f = root.querySelector('#pk-form[data-lat]');
+    if (!f) return;
+    const d = f.dataset;
+    const s = { lat: +d.lat, lng: +d.lng, radius: +d.radius, credit: +d.credit || 0, maxAge: +d.maxAge || DEFAULT_MAX_AGE };
+    if (![s.lat, s.lng, s.radius].every((x) => Number.isFinite(x) && x)) return;
+    try { localStorage.setItem(SITE_KEY, JSON.stringify(s)); } catch (e) { /* 存不了：斷線時就不先算範圍 */ }
+  }
+  function savedSite() {
+    try { return JSON.parse(localStorage.getItem(SITE_KEY) || 'null'); } catch (e) { return null; }
+  }
+
+  const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const hhmm = (ms) => { const t = new Date(ms); return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0'); };
+
+  function meters(lat1, lng1, lat2, lng2) {
+    const r = 6371000, rad = Math.PI / 180;
+    const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 +
+              Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lng2 - lng1) * rad / 2) ** 2;
+    return 2 * r * Math.asin(Math.sqrt(a));
+  }
+
+  function h(tag, props, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === 'style') n.style.cssText = v; else if (k in n) n[k] = v; else n.setAttribute(k, v);
+    }
+    n.append(...kids.filter((x) => x !== null && x !== undefined));
+    return n;
+  }
+
+  /** 換到離線打卡的畫面。back＝「回到系統」（重新連線）。 */
+  function open(back) {
+    const site = savedSite();
+    const MAX_AGE = (site && site.maxAge) || DEFAULT_MAX_AGE;
+    const clock = h('div', { style: 'text-align:center;font-size:44px;font-weight:700;font-variant-numeric:tabular-nums' }, '--:--');
+    const loc = h('p', { className: 'hint', style: 'text-align:center' }, '正在取得手機位置…');
+    const left = h('p', { className: 'hint', style: 'text-align:center' });
+    const reloc = h('button', { className: 'btn ghost wide', type: 'button' }, '重新取得位置');
+    const relocBox = h('div', { className: 'actions', hidden: true, style: 'margin-top:6px' }, reloc);
+    const reason = h('input', { id: 'offline-reason', maxLength: 200, placeholder: '例如：公出、校外教學、定位一直抓不到' });
+    const reasonBox = h('div', { hidden: !!site },
+      h('label', { htmlFor: 'offline-reason' }, site ? '原因（不在園區範圍內或拿不到定位時要填，人事確認後才算）'
+        : '原因（人不在園區時才填，例如公出、校外教學；人事確認後才算）'), reason);
+    const go = h('button', { className: 'btn wide', type: 'button', disabled: true }, '用 Face ID 離線打卡');
+    const resend = h('button', { className: 'btn ghost wide', type: 'button', hidden: true }, '再送一次');
+    const msg = h('p', { className: 'hint' });
+    const done = h('div', { className: 'alert ok', hidden: true });
+    const backBtn = h('button', { className: 'btn ghost wide', type: 'button' }, '回到系統（重新連線）');
+    // 外面包一層跟打卡頁一樣的（請假系統 base.html 的 .page.app-leave.g-hr）：按鈕、提示的顏色才跟平常打卡一樣
+    app.replaceChildren(h('div', { className: 'page app-leave g-hr' }, h('main', { className: 'container' },
+      h('h1', null, '離線打卡'),
+      h('div', { className: 'alert notice' }, '主機目前連不上。這裡打的卡先由轉送服務代收，主機恢復後自動匯入，',
+        h('b', null, '時間以代收的那一刻為準'), '，不用再打一次。'),
+      done,
+      h('div', { className: 'card' }, clock, loc, left, relocBox, reasonBox,
+        h('div', { className: 'actions' }, go), h('div', { className: 'actions' }, resend), msg),
+      h('p', { className: 'hint' }, '手機也要有網路才能代收。連著園內 Wi-Fi 卻上不了網的話，請先關掉 Wi-Fi 改用行動網路。',
+        '還是不行，請到辦公室紙本簽到。'),
+      h('div', { className: 'actions' }, backBtn))));
+    document.title = '離線打卡';
+    window.scrollTo(0, 0);
+
+    let status = 'locating', fix = null, fixAt = null, inRange = null;
+    let ticket = null, ticketP = null, pending = null, busyNow = false, finished = false;
+    const alive = () => document.body.contains(clock);
+    const ageSeconds = () => (fixAt === null ? null : Math.max(0, (Date.now() - fixAt) / 1000));
+    const ready = () => { go.disabled = finished || busyNow || status === 'locating' || status === 'expired' || !ticket; };
+
+    function tick() {
+      if (!alive()) { clearInterval(timer); return; }
+      clock.textContent = hhmm(Date.now());
+      if (finished) return;                        // 已代收：不再倒數、不再換號碼牌
+      if (ticket && !busyNow && !pending && Date.now() - ticket.got > TICKET_REFRESH_MS) getTicket();
+      if (status !== 'fresh') return;
+      const remain = Math.ceil(MAX_AGE - ageSeconds());
+      if (remain <= 0) {
+        status = 'expired'; fix = null; fixAt = null;
+        loc.textContent = '⏱ 位置已超過 ' + Math.round(MAX_AGE / 60) + ' 分鐘，請重新取得位置再打卡';
+        left.textContent = '';
+        relocBox.hidden = false;
+        ready();
+        return;
+      }
+      left.textContent = '請在 ' + Math.floor(remain / 60) + ':' + String(remain % 60).padStart(2, '0') + ' 內按下打卡';
+    }
+    const timer = setInterval(tick, 1000);
+    tick();
+
+    function locate() {
+      status = 'locating'; fix = null; fixAt = null; inRange = null; relocBox.hidden = true; left.textContent = '';
+      loc.textContent = '正在取得手機位置…';
+      ready();
+      if (!navigator.geolocation) { noLocation('這個瀏覽器拿不到定位。可以填原因後打卡，由人事確認。'); return; }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const c = pos.coords;
+        fix = { lat: c.latitude, lng: c.longitude, accuracy: Math.round(c.accuracy) };
+        fixAt = pos.timestamp && Math.abs(Date.now() - pos.timestamp) < 60000 ? pos.timestamp : Date.now();
+        status = 'fresh'; relocBox.hidden = false;
+        if (site) {
+          const m = Math.round(meters(c.latitude, c.longitude, site.lat, site.lng));
+          inRange = m - Math.min(c.accuracy, site.credit) <= site.radius;
+          loc.textContent = inRange ? '在園區範圍內（約 ' + m + ' 公尺，精度 ±' + Math.round(c.accuracy) + ' 公尺）'
+            : '離園區約 ' + m + ' 公尺，不在範圍內。公出、校外教學等請填原因，人事確認後才算。';
+          reasonBox.hidden = inRange && !reason.value;
+        } else {
+          loc.textContent = '已取得位置（精度 ±' + Math.round(c.accuracy) + ' 公尺）。主機恢復後才算在不在園區範圍內。';
+        }
+        ready();
+        tick();
+      }, (e) => noLocation((e.code === 1 ? '你沒有允許這個網頁使用定位。' : '拿不到定位（' + (e.message || '逾時') + '）。')
+        + '可以按「重新取得位置」，或填原因後打卡（人事確認後才算）。'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    }
+    function noLocation(text) {
+      status = 'none'; fix = null; fixAt = null; inRange = false;
+      loc.textContent = text; reasonBox.hidden = false; relocBox.hidden = false;
+      ready();
+    }
+
+    /** 跟轉送服務拿號碼牌（Face ID 一定要在按鈕的當下叫出來，所以先拿好、題目先算好）。 */
+    function getTicket() {
+      if (ticketP) return ticketP;
+      ticketP = (async () => {
+        let r;
+        try { r = await Gw.run('punchTicket'); } catch (e) {
+          if (alive() && !finished) msg.textContent = e.kind === 'network'
+            ? '手機目前沒有網路，代收不了。請關掉 Wi-Fi 改用行動網路後按「回到系統」再進來，或到辦公室紙本簽到。'
+            : '轉送服務沒有回應（' + e.message + '），請稍後按「回到系統」再試，或到辦公室紙本簽到。';
+          return;
+        }
+        if (!r || !r.ok) {
+          const why = r && r.error;
+          if (alive() && !finished) msg.textContent = why === 'host-up' ? '主機已經恢復連線了：請按「回到系統」，用一般的打卡。'
+            : why === 'busy' ? '轉送服務忙碌中，請過一分鐘按「回到系統」再進來。'
+            : '轉送服務現在不能代收（' + (why || '不明原因') + '），請到辦公室紙本簽到。';
+          return;
+        }
+        const challenge = await crypto.subtle.digest('SHA-256', te.encode(r.token));
+        ticket = { token: r.token, challenge, got: Date.now() };
+        if (msg.textContent.startsWith('號碼牌')) msg.textContent = '';
+      })().finally(() => { ticketP = null; if (alive()) ready(); });
+      return ticketP;
+    }
+
+    async function punch() {
+      msg.textContent = '';
+      if (status === 'locating') { msg.textContent = '還在取得位置，請稍等'; return; }
+      if (status === 'fresh' && ageSeconds() > MAX_AGE) { msg.textContent = '位置已過期，請按「重新取得位置」'; return; }
+      if (!reasonBox.hidden && inRange !== null && !inRange && !reason.value.trim()) {
+        msg.textContent = status === 'fresh' ? '不在園區範圍內，請先填原因' : '沒有定位：請填原因後再打卡';
+        reason.focus();
+        return;
+      }
+      if (!ticket || Date.now() - ticket.got > TICKET_REFRESH_MS) {
+        ticket = null;
+        msg.textContent = '號碼牌過期了，正在換新的，好了請再按一次';
+        getTicket();
+        return;
+      }
+      let cred;
+      busyNow = true; ready();
+      try {
+        cred = await navigator.credentials.get({ publicKey: {
+          challenge: ticket.challenge, userVerification: 'required', timeout: 120000, allowCredentials: [] } });
+      } catch (e) {
+        busyNow = false; ready();
+        msg.textContent = e && e.name === 'NotAllowedError' ? '已取消或逾時。請再按一次，並在手機跳出的視窗完成 Face ID／指紋'
+          : '這個瀏覽器沒辦法使用 Face ID／指紋（' + ((e && e.name) || e) + '）';
+        return;
+      }
+      const handle = cred.response.userHandle ? new TextDecoder().decode(cred.response.userHandle) : '';
+      if (OTHER && handle.startsWith(OTHER)) {
+        busyNow = false; ready();
+        msg.textContent = OTHER.includes('test') ? '你選到的是「（測試）」那一把 Face ID。請再按一次，選沒有「（測試）」的那一把。'
+          : '這是測試環境：請再按一次，選名字後面有「（測試）」的那一把 Face ID。';
+        return;
+      }
+      const resp = JSON.stringify({
+        id: cred.id, rawId: b64u(cred.rawId), type: cred.type, authenticatorAttachment: cred.authenticatorAttachment || null,
+        clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+        response: { clientDataJSON: b64u(cred.response.clientDataJSON), authenticatorData: b64u(cred.response.authenticatorData),
+                    signature: b64u(cred.response.signature),
+                    userHandle: cred.response.userHandle ? b64u(cred.response.userHandle) : null } });
+      const body = { passkey_response: resp, reason: reason.value.trim() };
+      if (fix && fixAt !== null) Object.assign(body, fix, { loc_age: Math.round(ageSeconds()) });
+      try {
+        const sealed = await Gw.seal({ method: 'POST', path: '/punch/offline',
+          headers: { 'content-type': 'application/json', 'x-campus-entry': ENTRY } }, te.encode(JSON.stringify(body)));
+        pending = { token: ticket.token, env: sealed.env, inRange };
+      } catch (e) {
+        busyNow = false; ready();
+        msg.textContent = '這支手機沒辦法加密（' + e.message + '），請到辦公室紙本簽到。';
+        return;
+      }
+      await send();
+    }
+
+    async function send() {
+      busyNow = true; ready(); resend.hidden = true;
+      msg.textContent = '送出中…';
+      let r;
+      try { r = await Gw.run('deposit', pending.token, pending.env); } catch (e) {
+        busyNow = false; ready(); resend.hidden = false;
+        msg.textContent = '還沒有送出（' + e.message + '）。手機有網路之後按「再送一次」（10 分鐘內）。';
+        return;
+      }
+      busyNow = false;
+      if (!r || !r.ok) {
+        const why = r && r.error;
+        if (why === 'busy' || why === 'full') {
+          resend.hidden = false;
+          msg.textContent = '轉送服務忙碌中，請過一分鐘按「再送一次」（10 分鐘內）。';
+        } else {
+          pending = null; ticket = null; getTicket();
+          msg.textContent = why === 'expired' ? '號碼牌過期了（超過 10 分鐘），請重新打一次。' : '代收沒有成功（' + (why || '不明原因') + '），請重新打一次。';
+        }
+        ready();
+        return;
+      }
+      finished = true; ready();
+      const out = pending.inRange === false;
+      pending = null;
+      go.textContent = '已代收';
+      msg.textContent = '';
+      relocBox.hidden = true; left.textContent = '';
+      done.replaceChildren('✅ 已代收 ', h('b', null, hhmm(r.at)), out
+        ? '。不在園區範圍內（或沒有定位），主機恢復後由人事確認才算。'
+        : '。主機恢復後自動匯入，不用再打一次。可以關掉這個畫面了。');
+      done.hidden = false;
+      window.scrollTo(0, 0);
+    }
+
+    go.addEventListener('click', punch);
+    resend.addEventListener('click', () => { if (pending) send(); });
+    reloc.addEventListener('click', locate);
+    reason.addEventListener('input', () => { if (reason.value) reasonBox.hidden = false; });
+    backBtn.addEventListener('click', () => { clearInterval(timer); back(); });
+    getTicket();
+    locate();
+  }
+
+  return { available, remember, open };
+})();
+
 const Shell = (() => {
   const app = document.getElementById('app');
   const busy = document.getElementById('busy');
@@ -2202,6 +2506,7 @@ const Shell = (() => {
     window.scrollTo(0, 0);
 
     loadImages(Array.from(app.querySelectorAll('img[data-src]')));
+    OfflinePunch.remember(app);
   }
 
   // 頁面上的圖片：一次最多抓 IMG_PARALLEL 張（每支手機、整個系統都有流量上限，一口氣全要容易被擋），
@@ -2368,8 +2673,18 @@ const Shell = (() => {
     if (e && e.kind === 'network') {
       // 斷網時外殼頁還打得開（sw.js），但系統連不上：照智慧校園規劃書 §3.5 改用紙本
       const hint = document.createElement('p');
-      hint.textContent = '連不上的這段時間，點名、接送請先記在紙本，恢復後補登。';
+      hint.textContent = '手機目前沒有網路。連著園內 Wi-Fi 卻上不了網的話，請關掉 Wi-Fi 改用行動網路再試。'
+        + '連不上的這段時間，點名、接送請先記在紙本，恢復後補登；打卡請到辦公室紙本簽到。';
       box.append(hint);
+    }
+    if (e && e.kind === 'offline' && OfflinePunch.available()) {
+      // 主機連不上、手機有網路（2026-11-20 早上那種）：打卡交給轉送服務代收，其他照舊記紙本
+      const hint = document.createElement('p');
+      hint.textContent = '主機連不上的這段時間：打卡可以用「離線打卡」，主機恢復後自動匯入；點名、接送請先記在紙本，恢復後補登。';
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = '離線打卡'; b.style.marginRight = '8px';
+      b.addEventListener('click', () => OfflinePunch.open(() => go('GET', readHash(), null, null, { replace: true })));
+      box.append(hint, b);
     }
     if (retry) {
       const b = document.createElement('button');
